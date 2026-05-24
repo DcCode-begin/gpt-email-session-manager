@@ -1,0 +1,42 @@
+# Python cache and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Local runtime data. These files may contain email accounts, tokens, sessions,
+# browser profiles, logs, and machine-specific state.
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.pid
+secret.key
+**/chatgpt_browser_profile/
+
+# Build and package outputs
+dist/
+build/
+*.spec
+*.exe
+*.msi
+*.zip
+*.dmg
+tools/installer_dotnet/bin/
+tools/installer_dotnet/obj/
+tools/installer_dotnet/Payload/
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini

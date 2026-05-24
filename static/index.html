@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>邮箱管理工具</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main id="appShell" class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <p class="eyebrow">本地数据</p>
+          <h1>邮箱管理工具</h1>
+        </div>
+        <div class="header-actions">
+          <button id="addEmailBtn" class="primary">新增邮箱</button>
+          <button id="openImportBtn">导入</button>
+          <button id="groupsBtn">分组</button>
+          <button id="logsBtn">日志</button>
+          <button id="settingsBtn">设置</button>
+        </div>
+      </header>
+
+      <section class="workbench">
+        <div class="filter-panel">
+          <div class="panel-title">筛选</div>
+          <div class="filters">
+            <div class="search-row">
+              <label class="search-label">
+                <span>搜索</span>
+                <input id="searchInput" type="search" placeholder="邮箱、分组、标签、备注" />
+              </label>
+              <button id="resetFiltersBtn">重置</button>
+            </div>
+            <div class="filter-row">
+              <label>
+                <span>分组</span>
+                <select id="groupFilter"></select>
+              </label>
+              <label>
+                <span>状态</span>
+                <select id="statusFilter">
+                  <option value="">全部</option>
+                  <option value="unknown">未检测</option>
+                  <option value="ok">正常</option>
+                  <option value="failed">失败</option>
+                  <option value="banned">被封</option>
+                  <option value="retry">重新尝试</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="export-panel">
+          <div class="export-section">
+            <div class="panel-title">邮箱导出</div>
+            <div class="export-actions">
+              <button id="exportMaskedBtn">脱敏导出邮箱</button>
+              <button id="exportFullBtn" class="danger-light">完整导出邮箱</button>
+            </div>
+          </div>
+          <div class="export-section">
+            <div class="panel-title">ChatGPT Session</div>
+            <div class="export-actions">
+              <button id="copyChatgptSessionBtn">复制接口地址</button>
+              <button id="copyAllChatgptSessionsBtn" class="accent-light">复制可导入Session</button>
+              <button id="exportChatgptSessionsBtn" class="accent-light">导出可导入Session</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="bulkbar">
+        <div class="bulk-controls">
+          <div class="bulk-head">
+            <div class="bulk-summary">
+              <span class="summary-pill"><strong id="emailCount">0</strong> 个邮箱</span>
+              <span id="selectedCount" class="summary-pill selected-pill">已选 0</span>
+            </div>
+          </div>
+          <div class="bulk-actions">
+            <div class="toolbar-group" data-label="选择">
+              <button id="selectWithSessionBtn">选择有Session</button>
+              <button id="selectWithoutSessionBtn">选择无Session</button>
+              <button id="selectRetryBtn">选择重新尝试</button>
+              <button id="selectBannedBtn">选择被封</button>
+            </div>
+            <div class="toolbar-group" data-label="检测">
+              <button id="bulkGroupBtn">批量分组</button>
+              <button id="bulkTestBtn">批量检测</button>
+              <button id="bulkFetchBtn">批量刷新验证码</button>
+            </div>
+            <div class="toolbar-group" data-label="GPT">
+              <label class="inline-select">
+                <span>并行</span>
+                <select id="bulkLoginConcurrency">
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3" selected>3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
+              </label>
+              <button id="bulkChatgptLoginBtn" class="primary">批量GPT登录</button>
+              <button id="bulkCopySessionBtn" class="accent-light">复制选中Session</button>
+              <button id="bulkExportSessionBtn" class="accent-light">导出选中Session</button>
+            </div>
+            <div class="toolbar-group" data-label="管理">
+              <button id="bulkExportBtn">导出选中</button>
+              <button id="bulkInvalidBtn" class="danger-light">移入失效</button>
+              <button id="bulkRestoreGroupBtn">恢复分组</button>
+              <button id="bulkDeleteBtn" class="danger-light">批量删除</button>
+            </div>
+          </div>
+        </div>
+        <span id="chatgptLoginStatus" class="muted login-status"></span>
+      </section>
+
+      <section class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="check-col"><input id="selectAll" type="checkbox" /></th>
+              <th>邮箱账号</th>
+              <th>密码</th>
+              <th>分组</th>
+              <th>状态</th>
+              <th>最近验证码</th>
+              <th>最近检查</th>
+              <th class="actions-col">操作</th>
+            </tr>
+          </thead>
+          <tbody id="emailTableBody"></tbody>
+        </table>
+        <div id="emptyState" class="empty hidden">暂无邮箱数据</div>
+      </section>
+    </main>
+
+    <dialog id="emailModal">
+      <form id="emailForm" method="dialog" class="modal-body">
+        <header>
+          <h2 id="emailModalTitle">新增邮箱</h2>
+          <button type="button" class="icon-btn" data-close="emailModal">×</button>
+        </header>
+        <input id="emailId" type="hidden" />
+        <div class="form-grid">
+          <label>
+            <span>邮箱账号</span>
+            <input id="emailField" name="email" type="email" required />
+          </label>
+          <label>
+            <span>密码或授权码</span>
+            <input id="passwordField" name="password" type="password" />
+          </label>
+          <label>
+            <span>分组</span>
+            <input id="groupField" name="group_name" />
+          </label>
+          <label>
+            <span>IMAP 地址</span>
+            <input id="imapHostField" name="imap_host" />
+          </label>
+          <label>
+            <span>IMAP 端口</span>
+            <input id="imapPortField" name="imap_port" type="number" min="1" value="993" />
+          </label>
+          <label>
+            <span>标签</span>
+            <input id="tagsField" name="tags" />
+          </label>
+          <label>
+            <span>备注</span>
+            <input id="remarkField" name="remark" />
+          </label>
+        </div>
+        <footer>
+          <button type="button" data-close="emailModal">取消</button>
+          <button class="primary" type="submit">保存</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="importModal" class="wide-dialog">
+      <section class="modal-body wide">
+        <header>
+          <h2>导入邮箱</h2>
+          <button type="button" class="icon-btn" data-close="importModal">×</button>
+        </header>
+        <div class="stack">
+          <input id="importFile" type="file" accept=".csv,.txt,text/csv,text/plain" />
+          <div id="importSummary" class="message"></div>
+          <div class="preview-wrap import-preview-wrap">
+            <table class="import-preview-table">
+              <thead>
+                <tr>
+                  <th>行</th>
+                  <th>邮箱</th>
+                  <th>分组</th>
+                  <th>结果</th>
+                </tr>
+              </thead>
+              <tbody id="importPreviewBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <footer>
+          <button type="button" data-close="importModal">取消</button>
+          <button id="commitImportBtn" class="primary" type="button">确认导入</button>
+        </footer>
+      </section>
+    </dialog>
+
+    <dialog id="settingsModal">
+      <form id="settingsForm" method="dialog" class="modal-body">
+        <header>
+          <h2>设置</h2>
+          <button type="button" class="icon-btn" data-close="settingsModal">×</button>
+        </header>
+        <div class="form-grid single">
+          <label>
+            <span>剪贴板清理秒数</span>
+            <input id="clipboardClearSeconds" type="number" min="0" />
+          </label>
+          <label>
+            <span>ChatGPT 代理地址</span>
+            <input id="chatgptProxy" placeholder="自动检测，或填 http://127.0.0.1:7890" />
+            <small class="form-help">浏览器插件代理不一定能被后台登录读取；需要时可填 http 或 socks5 代理。</small>
+          </label>
+        </div>
+        <footer>
+          <button type="button" data-close="settingsModal">取消</button>
+          <button class="primary" type="submit">保存</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="groupsModal" class="wide-dialog">
+      <section class="modal-body wide">
+        <header>
+          <h2>分组管理</h2>
+          <button type="button" class="icon-btn" data-close="groupsModal">×</button>
+        </header>
+        <form id="groupForm" method="dialog" class="inline-form">
+          <input id="groupNameField" placeholder="新分组名称" maxlength="60" />
+          <button class="primary" type="submit">新增</button>
+        </form>
+        <div class="preview-wrap groups-preview-wrap">
+          <table class="groups-table">
+            <thead>
+              <tr>
+                <th>分组</th>
+                <th>账号数</th>
+                <th>类型</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="groupsBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </dialog>
+
+    <dialog id="logsModal" class="wide-dialog">
+      <section class="modal-body wide">
+        <header>
+          <h2>操作日志</h2>
+          <button type="button" class="icon-btn" data-close="logsModal">×</button>
+        </header>
+        <div class="preview-wrap logs-preview-wrap">
+          <table class="logs-table">
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>操作</th>
+                <th>邮箱</th>
+                <th>详情</th>
+              </tr>
+            </thead>
+            <tbody id="logsBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </dialog>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,2 @@
+"""Local email manager package."""
+
