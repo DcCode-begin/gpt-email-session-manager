@@ -231,6 +231,10 @@ class AppHandler(BaseHTTPRequestHandler):
                     }
                 )
                 return
+            if path == "/api/chatgpt-sessions/clear-all":
+                cleared = self.db.clear_all_chatgpt_sessions()
+                self._json({"cleared": cleared})
+                return
 
             match = re.fullmatch(r"/api/emails/(\d+)/(password|test-imap|fetch-code|copy-code|chatgpt-login|copy-chatgpt-session|restore-group)", path)
             if match:

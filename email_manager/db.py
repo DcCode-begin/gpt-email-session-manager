@@ -798,8 +798,34 @@ class EmailDatabase:
             self._log(conn, log_action, email_id, json.dumps({"cleared_at": cleared_at}))
         return self.list_emails({"ids": [email_id]})[0]
 
+    def clear_all_chatgpt_sessions(self) -> int:
+        cleared_at = now_iso()
+        with self.connect() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM emails WHERE COALESCE(chatgpt_session_encrypted, '') <> ''"
+            ).fetchone()[0]
+            conn.execute(
+                """
+                UPDATE emails
+                   SET chatgpt_session_encrypted = '',
+                       chatgpt_session_updated_at = '',
+                       updated_at = ?
+                 WHERE COALESCE(chatgpt_session_encrypted, '') <> ''
+                """,
+                (cleared_at,),
+            )
+            self._log(
+                conn,
+                "clear_all_chatgpt_sessions",
+                None,
+                json.dumps({"count": count, "cleared_at": cleared_at}),
+            )
+        return int(count)
+
     def get_decrypted_chatgpt_session(self, email_id: int) -> str:
         row = self.get_email(email_id)
+        if (row["status"] or "") == "banned":
+            raise ValueError("这个账号已被标记为被封，旧 ChatGPT session 已不可用。")
         encrypted = row["chatgpt_session_encrypted"] or ""
         if not encrypted:
             raise ValueError("这个账号还没有保存 ChatGPT session，请先点 GPT登录。")
@@ -810,7 +836,10 @@ class EmailDatabase:
 
     def list_decrypted_chatgpt_sessions(self, ids: Iterable[int] | None = None) -> list[dict]:
         ids = [int(item) for item in (ids or [])]
-        clauses = ["COALESCE(chatgpt_session_encrypted, '') <> ''"]
+        clauses = [
+            "COALESCE(chatgpt_session_encrypted, '') <> ''",
+            "COALESCE(status, '') <> 'banned'",
+        ]
         params: list[int] = []
         if ids:
             placeholders = ",".join("?" for _ in ids)
@@ -962,7 +991,7 @@ class EmailDatabase:
             "previous_group_name": row["previous_group_name"] or "",
             "tags": row["tags"] or "",
             "remark": row["remark"] or "",
-            "has_chatgpt_session": bool(row["chatgpt_session_encrypted"]),
+            "has_chatgpt_session": bool(row["chatgpt_session_encrypted"]) and (row["status"] or "") != "banned",
             "chatgpt_session_updated_at": row["chatgpt_session_updated_at"] or "",
             "status": row["status"] or "unknown",
             "last_error": row["last_error"] or "",

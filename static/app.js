@@ -40,6 +40,7 @@ function bindEvents() {
   $("copyChatgptSessionBtn").addEventListener("click", copyChatgptSessionUrl);
   $("copyAllChatgptSessionsBtn").addEventListener("click", copyAllChatgptSessions);
   $("exportChatgptSessionsBtn").addEventListener("click", exportChatgptSessions);
+  $("clearAllChatgptSessionsBtn").addEventListener("click", clearAllChatgptSessions);
   $("bulkExportBtn").addEventListener("click", () => exportEmails("masked", true));
   $("groupsBtn").addEventListener("click", openGroups);
   $("groupForm").addEventListener("submit", createGroup);
@@ -488,6 +489,18 @@ async function exportChatgptSessionsByIds(ids = []) {
     link.remove();
     URL.revokeObjectURL(url);
     toast("可导入 Session 文件已导出。");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function clearAllChatgptSessions() {
+  if (!confirm("将清空所有已保存的 ChatGPT session 缓存。此操作不会删除邮箱账号，但清空后需要重新 GPT 登录才能再次复制或导出 session。确定继续？")) return;
+  try {
+    const data = await api("/api/chatgpt-sessions/clear-all", { method: "POST" });
+    state.selected.clear();
+    await loadEmails();
+    toast(`已清空 ${data.cleared || 0} 个 ChatGPT session 缓存。`);
   } catch (error) {
     toast(error.message, true);
   }
