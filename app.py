@@ -345,6 +345,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 int(port),
                 row["oauth_client_id"] or "",
                 oauth_refresh_token,
+                proxy_server=self._network_proxy_server(),
+                proxy_bypass=self._network_proxy_bypass(),
             )
             return self.db.update_status(email_id, "ok", "")
         except Exception as exc:
@@ -366,6 +368,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 int(port),
                 row["oauth_client_id"] or "",
                 oauth_refresh_token,
+                proxy_server=self._network_proxy_server(),
+                proxy_bypass=self._network_proxy_bypass(),
             )
             self.db.update_status(email_id, "ok", "")
             saved = self.db.save_code(email_id, code.__dict__ if code else None)
@@ -399,7 +403,8 @@ class AppHandler(BaseHTTPRequestHandler):
             session_callback=session_callback,
             cleanup_user_data_dir=False,
             copy_session_to_clipboard=copy_session_to_clipboard,
-            proxy_server=self._public_settings().get("chatgpt_proxy", ""),
+            proxy_server=self._network_proxy_server(),
+            proxy_bypass=self._network_proxy_bypass(),
         )
 
     def _start_chatgpt_login(self, email_id: int) -> dict:
@@ -684,10 +689,20 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def _public_settings(self) -> dict:
         settings = self.db.get_settings()
+        proxy_server = settings.get("proxy_server") or settings.get("chatgpt_proxy", "")
         return {
             "clipboard_clear_seconds": settings.get("clipboard_clear_seconds", "30"),
-            "chatgpt_proxy": settings.get("chatgpt_proxy", ""),
+            "proxy_server": proxy_server,
+            "proxy_bypass": settings.get("proxy_bypass", ""),
+            "chatgpt_proxy": proxy_server,
         }
+
+    def _network_proxy_server(self) -> str:
+        settings = self.db.get_settings()
+        return settings.get("proxy_server") or settings.get("chatgpt_proxy", "")
+
+    def _network_proxy_bypass(self) -> str:
+        return self.db.get_settings().get("proxy_bypass", "")
 
     def _static(self, path: str) -> None:
         if path == "/":
@@ -804,7 +819,7 @@ def _update_login_job(job_id: str, status: str, message: str) -> None:
             {
                 "status": status,
                 "message": message,
-                "clipboard_copied": status == "ok",
+                "clipboard_copied": status == "ok" and "复制成功" in message,
                 "updated_at": now,
             }
         )

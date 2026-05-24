@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import imaplib
+import ssl
 import time
 import urllib.parse
 import urllib.request
@@ -12,6 +13,7 @@ from email.parser import BytesParser
 from email.utils import parsedate_to_datetime
 
 from .code_parser import extract_verification_code, html_to_text
+from .proxy import create_proxy_connection, create_url_opener, detect_proxy_config
 
 
 PROVIDER_DEFAULTS = {
@@ -47,10 +49,20 @@ def test_imap_connection(
     oauth_client_id: str = "",
     oauth_refresh_token: str = "",
     timeout: int = 12,
+    proxy_server: str = "",
+    proxy_bypass: str = "",
 ) -> None:
-    client = imaplib.IMAP4_SSL(imap_host, int(imap_port), timeout=timeout)
+    client = _open_imap_ssl(imap_host, int(imap_port), timeout, proxy_server, proxy_bypass)
     try:
-        _login(client, email_address, password, oauth_client_id, oauth_refresh_token)
+        _login(
+            client,
+            email_address,
+            password,
+            oauth_client_id,
+            oauth_refresh_token,
+            proxy_server,
+            proxy_bypass,
+        )
     finally:
         try:
             client.logout()
@@ -69,10 +81,20 @@ def fetch_latest_code(
     timeout: int = 15,
     received_after: datetime | None = None,
     sender_subject_keywords: tuple[str, ...] | None = None,
+    proxy_server: str = "",
+    proxy_bypass: str = "",
 ) -> MailCode | None:
-    client = imaplib.IMAP4_SSL(imap_host, int(imap_port), timeout=timeout)
+    client = _open_imap_ssl(imap_host, int(imap_port), timeout, proxy_server, proxy_bypass)
     try:
-        _login(client, email_address, password, oauth_client_id, oauth_refresh_token)
+        _login(
+            client,
+            email_address,
+            password,
+            oauth_client_id,
+            oauth_refresh_token,
+            proxy_server,
+            proxy_bypass,
+        )
         client.select("INBOX", readonly=True)
         status, data = client.search(None, "ALL")
         if status != "OK" or not data or not data[0]:
@@ -195,16 +217,28 @@ def _login(
     password: str,
     oauth_client_id: str = "",
     oauth_refresh_token: str = "",
+    proxy_server: str = "",
+    proxy_bypass: str = "",
 ) -> None:
     if oauth_client_id and oauth_refresh_token:
-        access_token = _microsoft_access_token(oauth_client_id, oauth_refresh_token)
+        access_token = _microsoft_access_token(
+            oauth_client_id,
+            oauth_refresh_token,
+            proxy_server,
+            proxy_bypass,
+        )
         auth_string = f"user={email_address}\x01auth=Bearer {access_token}\x01\x01"
         client.authenticate("XOAUTH2", lambda _: auth_string.encode("utf-8"))
         return
     client.login(email_address, password)
 
 
-def _microsoft_access_token(client_id: str, refresh_token: str) -> str:
+def _microsoft_access_token(
+    client_id: str,
+    refresh_token: str,
+    proxy_server: str = "",
+    proxy_bypass: str = "",
+) -> str:
     cache_key = (client_id, refresh_token)
     cached = OAUTH_TOKEN_CACHE.get(cache_key)
     if cached and cached[1] > time.monotonic():
@@ -224,8 +258,13 @@ def _microsoft_access_token(client_id: str, refresh_token: str) -> str:
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
     )
+    proxy = detect_proxy_config(proxy_server, proxy_bypass).server_for(
+        "login.microsoftonline.com",
+        443,
+    )
+    opener = create_url_opener(proxy)
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with opener.open(request, timeout=20) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
@@ -239,3 +278,42 @@ def _microsoft_access_token(client_id: str, refresh_token: str) -> str:
         time.monotonic() + max(60, expires_in - 120),
     )
     return token
+
+
+class _ProxyIMAP4SSL(imaplib.IMAP4_SSL):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        proxy_server: str,
+        *,
+        ssl_context: ssl.SSLContext | None = None,
+        timeout: int | float | None = None,
+    ) -> None:
+        self._email_manager_proxy_server = proxy_server
+        super().__init__(host, port, ssl_context=ssl_context, timeout=timeout)
+
+    def _create_socket(self, timeout):
+        raw_socket = create_proxy_connection(
+            self.host,
+            self.port,
+            timeout,
+            self._email_manager_proxy_server,
+        )
+        return self.ssl_context.wrap_socket(raw_socket, server_hostname=self.host)
+
+
+def _open_imap_ssl(
+    imap_host: str,
+    imap_port: int,
+    timeout: int | float,
+    proxy_server: str = "",
+    proxy_bypass: str = "",
+) -> imaplib.IMAP4_SSL:
+    proxy = detect_proxy_config(proxy_server, proxy_bypass).server_for(
+        imap_host,
+        imap_port,
+    )
+    if not proxy:
+        return imaplib.IMAP4_SSL(imap_host, int(imap_port), timeout=timeout)
+    return _ProxyIMAP4SSL(imap_host, int(imap_port), proxy, timeout=timeout)

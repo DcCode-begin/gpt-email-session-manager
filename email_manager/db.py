@@ -141,6 +141,17 @@ class EmailDatabase:
             self._set_default(conn, "auto_lock_seconds", "300")
             self._set_default(conn, "clipboard_clear_seconds", "30")
             self._set_default(conn, "chatgpt_proxy", "")
+            self._set_default(conn, "proxy_server", "")
+            self._set_default(conn, "proxy_bypass", "")
+            conn.execute(
+                """
+                UPDATE settings
+                   SET value = COALESCE((SELECT value FROM settings WHERE key = 'chatgpt_proxy'), '')
+                 WHERE key = 'proxy_server'
+                   AND value = ''
+                   AND COALESCE((SELECT value FROM settings WHERE key = 'chatgpt_proxy'), '') <> ''
+                """
+            )
             conn.execute("DELETE FROM settings WHERE key LIKE ?", ("master" + "_password_%",))
             self._migrate_legacy_invalid_groups(conn)
             for group_name in ISOLATED_GROUPS:
@@ -257,10 +268,18 @@ class EmailDatabase:
         return {row["key"]: row["value"] for row in rows}
 
     def update_settings(self, settings: dict) -> dict:
-        allowed = {"auto_lock_seconds", "clipboard_clear_seconds", "chatgpt_proxy"}
+        allowed = {
+            "auto_lock_seconds",
+            "clipboard_clear_seconds",
+            "chatgpt_proxy",
+            "proxy_server",
+            "proxy_bypass",
+        }
         with self.connect() as conn:
             for key, value in settings.items():
                 if key in allowed:
+                    if key == "chatgpt_proxy":
+                        key = "proxy_server"
                     conn.execute(
                         "INSERT INTO settings (key, value) VALUES (?, ?) "
                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

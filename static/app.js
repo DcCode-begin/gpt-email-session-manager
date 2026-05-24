@@ -4,6 +4,8 @@ const state = {
   groups: [],
   settings: {
     clipboard_clear_seconds: "30",
+    proxy_server: "",
+    proxy_bypass: "",
     chatgpt_proxy: "",
   },
   importRows: [],
@@ -612,7 +614,8 @@ function resetFilters() {
 
 function openSettings() {
   $("clipboardClearSeconds").value = state.settings.clipboard_clear_seconds || "30";
-  $("chatgptProxy").value = state.settings.chatgpt_proxy || "";
+  $("chatgptProxy").value = state.settings.proxy_server || state.settings.chatgpt_proxy || "";
+  $("proxyBypass").value = state.settings.proxy_bypass || "";
   $("settingsModal").showModal();
 }
 
@@ -623,7 +626,8 @@ async function saveSettings(event) {
       method: "PUT",
       body: {
         clipboard_clear_seconds: $("clipboardClearSeconds").value,
-        chatgpt_proxy: $("chatgptProxy").value.trim(),
+        proxy_server: $("chatgptProxy").value.trim(),
+        proxy_bypass: $("proxyBypass").value.trim(),
       },
     });
     state.settings = result.settings;

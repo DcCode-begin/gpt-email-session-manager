@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import os
-import platform
 import re
-import subprocess
 import time
 import ctypes
 import shutil
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
 from .imap_tools import fetch_latest_code
+from .proxy import detect_proxy_config
 
 
 CHATGPT_LOGIN_URL = "https://chatgpt.com/auth/login"
@@ -90,8 +90,8 @@ def run_chatgpt_login(config: ChatGPTLoginConfig, notify: StatusCallback) -> Non
         _dismiss_cookie_prompt(page)
 
         if _looks_logged_in(page):
-            _copy_chatgpt_session_to_clipboard(page, config)
-            notify("ok", _session_done_message(config, "ChatGPT 已处于登录状态"))
+            clipboard_copied = _copy_chatgpt_session_to_clipboard(page, config)
+            notify("ok", _session_done_message(config, "ChatGPT 已处于登录状态", clipboard_copied))
             _maybe_keep_browser_open(context, config)
             return
 
@@ -106,8 +106,8 @@ def run_chatgpt_login(config: ChatGPTLoginConfig, notify: StatusCallback) -> Non
         _fill_code_and_continue(page, code)
 
         _wait_until_logged_in(page, config.login_timeout_seconds)
-        _copy_chatgpt_session_to_clipboard(page, config)
-        notify("ok", _session_done_message(config, "ChatGPT 登录完成"))
+        clipboard_copied = _copy_chatgpt_session_to_clipboard(page, config)
+        notify("ok", _session_done_message(config, "ChatGPT 登录完成", clipboard_copied))
         _maybe_keep_browser_open(context, config)
     except PlaywrightTimeoutError as exc:
         message = "等待 ChatGPT 页面或验证码输入框超时。"
@@ -154,92 +154,7 @@ def _browser_args(config: ChatGPTLoginConfig) -> list[str]:
 
 
 def _browser_proxy_config(config: ChatGPTLoginConfig) -> dict | None:
-    server = _detect_proxy_server(config.proxy_server)
-    if not server:
-        return None
-    proxy = {"server": server}
-    bypass = (config.proxy_bypass or os.environ.get("NO_PROXY") or os.environ.get("no_proxy") or "").strip()
-    if bypass:
-        proxy["bypass"] = bypass
-    return proxy
-
-
-def _detect_proxy_server(configured_proxy: str = "") -> str:
-    configured = (configured_proxy or os.environ.get("EMAIL_MANAGER_CHATGPT_PROXY") or "").strip()
-    if configured:
-        return _normalize_proxy_server(configured)
-    for env_name in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
-        server = _normalize_proxy_server(os.environ.get(env_name, ""))
-        if server:
-            return server
-    system_proxy = _detect_windows_proxy() if platform.system() == "Windows" else _detect_macos_proxy()
-    return _normalize_proxy_server(system_proxy)
-
-
-def _normalize_proxy_server(value: str) -> str:
-    value = (value or "").strip()
-    if not value or value.lower() in {"direct", "none", "off", "false", "0"}:
-        return ""
-    if "://" in value:
-        return value
-    if "=" in value or ";" in value:
-        return _proxy_from_mapping(value)
-    return f"http://{value}"
-
-
-def _proxy_from_mapping(value: str) -> str:
-    entries: dict[str, str] = {}
-    for item in value.split(";"):
-        if "=" not in item:
-            continue
-        key, raw = item.split("=", 1)
-        entries[key.strip().lower()] = raw.strip()
-    for key, scheme in (("https", "http"), ("http", "http"), ("socks", "socks5")):
-        if entries.get(key):
-            server = entries[key]
-            return server if "://" in server else f"{scheme}://{server}"
-    return ""
-
-
-def _detect_windows_proxy() -> str:
-    try:
-        import winreg
-
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") as key:
-            enabled, _ = winreg.QueryValueEx(key, "ProxyEnable")
-            if not enabled:
-                return ""
-            server, _ = winreg.QueryValueEx(key, "ProxyServer")
-            return str(server or "")
-    except Exception:
-        return ""
-
-
-def _detect_macos_proxy() -> str:
-    if platform.system() != "Darwin":
-        return ""
-    try:
-        result = subprocess.run(
-            ["scutil", "--proxy"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except Exception:
-        return ""
-    if result.returncode != 0:
-        return ""
-    values: dict[str, str] = {}
-    for line in result.stdout.splitlines():
-        if ":" not in line:
-            continue
-        key, value = line.split(":", 1)
-        values[key.strip()] = value.strip()
-    for prefix, scheme in (("HTTPS", "http"), ("HTTP", "http"), ("SOCKS", "socks5")):
-        if values.get(f"{prefix}Enable") == "1" and values.get(f"{prefix}Proxy") and values.get(f"{prefix}Port"):
-            return f"{scheme}://{values[f'{prefix}Proxy']}:{values[f'{prefix}Port']}"
-    return ""
+    return detect_proxy_config(config.proxy_server, config.proxy_bypass).browser_proxy()
 
 
 def _find_browser_executable(playwright) -> Path | None:
@@ -515,6 +430,8 @@ def _wait_for_email_code(
             timeout=6,
             received_after=received_after,
             sender_subject_keywords=OPENAI_MAIL_KEYWORDS,
+            proxy_server=config.proxy_server,
+            proxy_bypass=config.proxy_bypass,
         )
         waited = time.monotonic() - started_at
         if not code and waited > 12:
@@ -528,6 +445,8 @@ def _wait_for_email_code(
                 limit=16,
                 timeout=6,
                 sender_subject_keywords=OPENAI_MAIL_KEYWORDS,
+                proxy_server=config.proxy_server,
+                proxy_bypass=config.proxy_bypass,
             )
         if not code and waited > 30:
             code = fetch_latest_code(
@@ -539,6 +458,8 @@ def _wait_for_email_code(
                 config.oauth_refresh_token,
                 limit=20,
                 timeout=6,
+                proxy_server=config.proxy_server,
+                proxy_bypass=config.proxy_bypass,
             )
         if code:
             return code.code
@@ -670,7 +591,7 @@ def _keep_browser_open(context) -> None:
             return
 
 
-def _copy_chatgpt_session_to_clipboard(page, config: ChatGPTLoginConfig | None = None) -> str:
+def _copy_chatgpt_session_to_clipboard(page, config: ChatGPTLoginConfig | None = None) -> bool:
     session_page = page.context.new_page()
     try:
         session_page.goto(CHATGPT_SESSION_URL, wait_until="domcontentloaded", timeout=60000)
@@ -686,19 +607,30 @@ def _copy_chatgpt_session_to_clipboard(page, config: ChatGPTLoginConfig | None =
     if config and config.session_callback:
         config.session_callback(session_text)
     if not config or config.copy_session_to_clipboard:
-        _set_windows_clipboard_text(session_text)
-    return session_text
+        try:
+            _set_clipboard_text(session_text)
+            return True
+        except Exception:
+            return False
+    return False
 
 
-def _session_done_message(config: ChatGPTLoginConfig, prefix: str) -> str:
-    if config.copy_session_to_clipboard:
+def _session_done_message(config: ChatGPTLoginConfig, prefix: str, clipboard_copied: bool = False) -> str:
+    if config.copy_session_to_clipboard and clipboard_copied:
         return f"{prefix}，session 已复制成功。"
+    if config.copy_session_to_clipboard:
+        return f"{prefix}，session 已保存到账号。当前系统未写入剪贴板，可在页面中复制。"
     return f"{prefix}，session 已保存到账号。"
 
 
 def _set_windows_clipboard_text(text: str) -> None:
+    _set_clipboard_text(text)
+
+
+def _set_clipboard_text(text: str) -> None:
     if os.name != "nt":
-        raise RuntimeError("当前系统不支持自动写入 Windows 剪贴板。")
+        _set_unix_clipboard_text(text)
+        return
 
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
@@ -739,6 +671,36 @@ def _set_windows_clipboard_text(text: str) -> None:
         user32.CloseClipboard()
         if not clipboard_owns_handle:
             kernel32.GlobalFree(handle)
+
+
+def _set_unix_clipboard_text(text: str) -> None:
+    commands: list[list[str]] = []
+    if shutil.which("pbcopy"):
+        commands.append(["pbcopy"])
+    if shutil.which("wl-copy"):
+        commands.append(["wl-copy"])
+    if shutil.which("xclip"):
+        commands.append(["xclip", "-selection", "clipboard"])
+    if shutil.which("xsel"):
+        commands.append(["xsel", "--clipboard", "--input"])
+
+    errors = []
+    for command in commands:
+        try:
+            subprocess.run(
+                command,
+                input=text,
+                text=True,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+            return
+        except Exception as exc:
+            errors.append(str(exc))
+    detail = f"：{'; '.join(errors)}" if errors else ""
+    raise RuntimeError(f"当前系统没有可用剪贴板工具，请安装 pbcopy、wl-copy、xclip 或 xsel{detail}")
 
 
 def _handle_login_failure(

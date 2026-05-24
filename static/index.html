@@ -224,9 +224,14 @@
             <input id="clipboardClearSeconds" type="number" min="0" />
           </label>
           <label>
-            <span>ChatGPT 代理地址</span>
+            <span>网络代理地址</span>
             <input id="chatgptProxy" placeholder="自动检测，或填 http://127.0.0.1:7890" />
-            <small class="form-help">浏览器插件代理不一定能被后台登录读取；需要时可填 http 或 socks5 代理。</small>
+            <small class="form-help">用于浏览器登录、IMAP 检测、验证码读取和 OAuth 刷新；浏览器/IMAP 支持 http、https、socks5，Outlook OAuth 请用 http/https。</small>
+          </label>
+          <label>
+            <span>代理绕过规则</span>
+            <input id="proxyBypass" placeholder="例如 localhost,127.0.0.1,.example.com" />
+            <small class="form-help">可选。也会读取 NO_PROXY/no_proxy；多个规则用逗号分隔。</small>
           </label>
         </div>
         <footer>

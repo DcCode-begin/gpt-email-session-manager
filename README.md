@@ -113,10 +113,42 @@ http://127.0.0.1:8765/
 ## 环境要求
 
 - Python 3.10 或更高版本
-- Windows 10/11 或 macOS
+- Windows 10/11、macOS，或 Linux 手动启动环境
 - Chrome、Edge 或 Playwright Chromium
 - 可访问目标邮箱 IMAP 服务的网络环境
 - 可正常访问 GPT 登录页面的网络环境
+
+## 网络和代理适配
+
+本工具会尽量适配不同系统和网络环境。代理优先级如下：
+
+1. 设置页里的「网络代理地址」
+2. 环境变量 `EMAIL_MANAGER_PROXY` 或兼容旧版本的 `EMAIL_MANAGER_CHATGPT_PROXY`
+3. 环境变量 `HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY`
+4. Windows 系统代理或 macOS 系统代理
+
+代理会同时用于：
+
+- GPT 登录浏览器
+- IMAP 连接检测
+- 邮箱验证码读取
+- Outlook OAuth token 刷新
+
+支持的代理格式示例：
+
+```text
+http://127.0.0.1:7890
+https://proxy.example.com:443
+socks5://127.0.0.1:7891
+```
+
+如果某些地址不需要代理，可以在设置页填写「代理绕过规则」，或使用 `NO_PROXY` / `no_proxy` 环境变量：
+
+```text
+localhost,127.0.0.1,.example.com
+```
+
+浏览器登录和 IMAP 连接支持 `socks5`；如果使用 Outlook OAuth，请配置 `http` 或 `https` 代理地址，因为 OAuth token 刷新是 HTTPS 请求，不走 SOCKS5。
 
 ## 快速开始
 
@@ -168,6 +200,28 @@ chmod +x run-macos.command stop-macos.command
 ```bash
 ./stop-macos.command
 ```
+
+### Linux 启动
+
+首次使用前添加执行权限：
+
+```bash
+chmod +x run-linux.sh stop-linux.sh
+```
+
+启动：
+
+```bash
+./run-linux.sh
+```
+
+停止：
+
+```bash
+./stop-linux.sh
+```
+
+Linux 需要系统已安装 Python 3.10+。如果创建虚拟环境失败，通常需要先安装系统包，例如 Debian/Ubuntu 上的 `python3-venv`。如果没有 Chrome、Edge 或 Chromium，启动脚本会尝试安装 Playwright Chromium。
 
 ### 手动启动
 
@@ -319,13 +373,16 @@ data/
 ├── requirements.txt
 ├── run-windows.bat
 ├── run-macos.command
+├── run-linux.sh
 ├── stop-windows.bat
 ├── stop-macos.command
+├── stop-linux.sh
 ├── email_manager/
 │   ├── chatgpt_login.py
 │   ├── code_parser.py
 │   ├── db.py
 │   ├── imap_tools.py
+│   ├── proxy.py
 │   └── security.py
 ├── static/
 │   ├── index.html
@@ -334,9 +391,11 @@ data/
 └── tools/
     ├── launcher.ps1
     ├── launcher_macos.sh
+    ├── launcher_linux.sh
     ├── install_deps.ps1
     ├── stop_server.ps1
-    └── stop_server_macos.sh
+    ├── stop_server_macos.sh
+    └── stop_server_linux.sh
 ```
 
 ## 常见问题
